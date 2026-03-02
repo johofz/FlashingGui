@@ -26,6 +26,19 @@ python main.py
 4. Click **Flash** to program the firmware
 5. Use **Erase** for full chip erase or **Reset** to restart the MCU
 
+### Variable Monitor
+
+1. Switch to the **Variable Monitor** tab
+2. Browse and load a GCC ARM linker `.map` file
+3. Select which variables to watch using the checkboxes
+4. Choose the correct data type for each variable (uint8_t, int16_t, float, etc.)
+5. Set the poll interval (default: 500ms)
+6. Click **Start Monitoring** to connect and begin live reading
+7. Variable values update in real-time in the table
+
+The monitor uses OpenOCD's TCL RPC interface (port 6666) for efficient
+periodic memory reads without reconnecting.
+
 ## Supported Targets
 
 STM32F0, STM32F1, STM32F2, STM32F3, STM32F4, STM32F7, STM32G0, STM32G4,
