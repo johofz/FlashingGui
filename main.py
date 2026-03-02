@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""STM32 Flash Tool - A modern GUI for flashing STM32 MCUs via OpenOCD and ST-Link."""
+"""STM32 Flash Tool - A modern GUI for flashing and verifying STM32 MCUs via OpenOCD."""
 
 import os
 import sys
@@ -22,8 +22,8 @@ from PyQt5.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QSpinBox,
+    QSplitter,
     QStatusBar,
-    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -39,13 +39,13 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("STM32 Flash Tool")
-        self.setMinimumSize(740, 600)
-        self.resize(780, 680)
+        self.setMinimumSize(760, 700)
+        self.resize(800, 820)
 
         self.settings = QSettings("STM32FlashTool", "STM32FlashTool")
         self.flasher = OpenOCDFlasher(self)
         self.monitor = OpenOCDMonitor(self)
-        self._map_symbols = []  # list of MapSymbol
+        self._map_symbols = []
 
         self._build_ui()
         self._connect_signals()
@@ -59,57 +59,65 @@ class MainWindow(QMainWindow):
     def _build_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
-        root_layout = QVBoxLayout(central)
-        root_layout.setContentsMargins(16, 16, 16, 8)
-        root_layout.setSpacing(12)
+        root = QVBoxLayout(central)
+        root.setContentsMargins(16, 12, 16, 8)
+        root.setSpacing(10)
 
-        # --- Shared Target Configuration (above tabs) ---
-        target_group = QGroupBox("Target")
-        target_layout = QHBoxLayout(target_group)
-        target_label = QLabel("Target MCU:")
-        target_label.setFixedWidth(100)
+        # ── 1. Configuration ─────────────────────────────────────────
+        config_group = QGroupBox("Configuration")
+        config_layout = QVBoxLayout(config_group)
+        config_layout.setSpacing(8)
+
+        # Target MCU
+        mcu_row = QHBoxLayout()
+        mcu_label = QLabel("Target MCU:")
+        mcu_label.setFixedWidth(100)
         self.target_combo = QComboBox()
         self.target_combo.addItems(sorted(TARGETS.keys()))
         self.target_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        target_layout.addWidget(target_label)
-        target_layout.addWidget(self.target_combo)
-        root_layout.addWidget(target_group)
+        mcu_row.addWidget(mcu_label)
+        mcu_row.addWidget(self.target_combo)
+        config_layout.addLayout(mcu_row)
 
-        # --- Tab Widget ---
-        self.tabs = QTabWidget()
-        self.tabs.addTab(self._build_flash_tab(), "Flash")
-        self.tabs.addTab(self._build_monitor_tab(), "Variable Monitor")
-        root_layout.addWidget(self.tabs, stretch=1)
-
-        # --- Status Bar ---
-        self.status_bar = QStatusBar()
-        self.setStatusBar(self.status_bar)
-
-    def _build_flash_tab(self):
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setContentsMargins(0, 8, 0, 0)
-        layout.setSpacing(12)
-
-        # Firmware row
-        fw_group = QGroupBox("Firmware")
-        fw_layout = QHBoxLayout(fw_group)
-        fw_label = QLabel("File:")
+        # Firmware file
+        fw_row = QHBoxLayout()
+        fw_label = QLabel("Firmware:")
         fw_label.setFixedWidth(100)
         self.firmware_edit = QLineEdit()
         self.firmware_edit.setPlaceholderText("Select a firmware file (.bin, .hex, .elf)")
         self.browse_btn = QPushButton("Browse")
         self.browse_btn.setObjectName("browseBtn")
-        fw_layout.addWidget(fw_label)
-        fw_layout.addWidget(self.firmware_edit)
-        fw_layout.addWidget(self.browse_btn)
-        layout.addWidget(fw_group)
+        fw_row.addWidget(fw_label)
+        fw_row.addWidget(self.firmware_edit)
+        fw_row.addWidget(self.browse_btn)
+        config_layout.addLayout(fw_row)
 
-        # Actions
-        actions_group = QGroupBox("Actions")
-        actions_layout = QHBoxLayout(actions_group)
-        actions_layout.setSpacing(10)
+        # Map file
+        map_row = QHBoxLayout()
+        map_label = QLabel("Map File:")
+        map_label.setFixedWidth(100)
+        self.map_edit = QLineEdit()
+        self.map_edit.setPlaceholderText("Select a linker .map file (optional)")
+        self.map_browse_btn = QPushButton("Browse")
+        self.map_browse_btn.setObjectName("browseBtn")
+        self.map_load_btn = QPushButton("Load")
+        self.map_load_btn.setObjectName("mapLoadBtn")
+        map_row.addWidget(map_label)
+        map_row.addWidget(self.map_edit)
+        map_row.addWidget(self.map_browse_btn)
+        map_row.addWidget(self.map_load_btn)
+        config_layout.addLayout(map_row)
 
+        root.addWidget(config_group)
+
+        # ── 2. Flash ─────────────────────────────────────────────────
+        flash_group = QGroupBox("Flash")
+        flash_layout = QVBoxLayout(flash_group)
+        flash_layout.setSpacing(8)
+
+        # Action buttons
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(10)
         self.connect_btn = QPushButton("Connect")
         self.connect_btn.setToolTip("Probe the target MCU via ST-Link")
         self.flash_btn = QPushButton("Flash")
@@ -125,77 +133,48 @@ class MainWindow(QMainWindow):
         self.abort_btn.setToolTip("Stop the running operation")
         self.abort_btn.setVisible(False)
 
-        actions_layout.addWidget(self.connect_btn)
-        actions_layout.addWidget(self.flash_btn)
-        actions_layout.addWidget(self.erase_btn)
-        actions_layout.addWidget(self.reset_btn)
-        actions_layout.addStretch()
-        actions_layout.addWidget(self.abort_btn)
-        layout.addWidget(actions_group)
+        btn_row.addWidget(self.connect_btn)
+        btn_row.addWidget(self.flash_btn)
+        btn_row.addWidget(self.erase_btn)
+        btn_row.addWidget(self.reset_btn)
+        btn_row.addStretch()
+        btn_row.addWidget(self.abort_btn)
+        flash_layout.addLayout(btn_row)
 
-        # Progress
-        progress_group = QGroupBox("Progress")
-        progress_layout = QVBoxLayout(progress_group)
-        progress_layout.setSpacing(6)
+        # Progress bar + status
+        progress_row = QHBoxLayout()
         self.progress_bar = QProgressBar()
         self.progress_bar.setValue(0)
         self.progress_bar.setTextVisible(True)
         self.progress_bar.setFormat("%p%")
-        progress_layout.addWidget(self.progress_bar)
         self.status_label = QLabel("Ready")
         self.status_label.setObjectName("statusLabel")
-        progress_layout.addWidget(self.status_label)
-        layout.addWidget(progress_group)
+        self.status_label.setFixedWidth(200)
+        progress_row.addWidget(self.progress_bar)
+        progress_row.addWidget(self.status_label)
+        flash_layout.addLayout(progress_row)
 
-        # Console
-        console_group = QGroupBox("Console Output")
-        console_layout = QVBoxLayout(console_group)
-        console_layout.setSpacing(6)
-        self.console = QPlainTextEdit()
-        self.console.setObjectName("console")
-        self.console.setReadOnly(True)
-        self.console.setFont(QFont("Consolas", 11))
-        self.console.setMaximumBlockCount(5000)
-        console_layout.addWidget(self.console)
-        clear_row = QHBoxLayout()
-        clear_row.addStretch()
-        self.clear_btn = QPushButton("Clear")
-        self.clear_btn.setObjectName("clearBtn")
-        clear_row.addWidget(self.clear_btn)
-        console_layout.addLayout(clear_row)
-        layout.addWidget(console_group, stretch=1)
+        root.addWidget(flash_group)
 
-        return tab
+        # ── 3. Splitter: Variable Monitor + Console ──────────────────
+        splitter = QSplitter(Qt.Vertical)
 
-    def _build_monitor_tab(self):
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setContentsMargins(0, 8, 0, 0)
-        layout.setSpacing(10)
+        # -- Variable Monitor --
+        monitor_group = QGroupBox("Variable Monitor")
+        monitor_layout = QVBoxLayout(monitor_group)
+        monitor_layout.setSpacing(6)
 
-        # --- Map File ---
-        map_group = QGroupBox("Map File")
-        map_layout = QHBoxLayout(map_group)
-        map_label = QLabel("Map File:")
-        map_label.setFixedWidth(100)
-        self.map_edit = QLineEdit()
-        self.map_edit.setPlaceholderText("Select a linker .map file")
-        self.map_browse_btn = QPushButton("Browse")
-        self.map_browse_btn.setObjectName("browseBtn")
-        self.map_load_btn = QPushButton("Load")
-        self.map_load_btn.setObjectName("mapLoadBtn")
-        map_layout.addWidget(map_label)
-        map_layout.addWidget(self.map_edit)
-        map_layout.addWidget(self.map_browse_btn)
-        map_layout.addWidget(self.map_load_btn)
-        layout.addWidget(map_group)
+        # Monitor control row
+        ctrl_row = QHBoxLayout()
+        ctrl_row.setSpacing(8)
 
-        # --- Monitor Control ---
-        ctrl_group = QGroupBox("Monitor Control")
-        ctrl_layout = QHBoxLayout(ctrl_group)
-        ctrl_layout.setSpacing(10)
+        # Filter
+        filter_label = QLabel("Filter:")
+        self.var_filter_edit = QLineEdit()
+        self.var_filter_edit.setPlaceholderText("Filter variables...")
+        self.var_filter_edit.setMaximumWidth(200)
 
-        interval_label = QLabel("Poll Interval:")
+        interval_label = QLabel("Interval:")
         self.poll_spin = QSpinBox()
         self.poll_spin.setRange(50, 10000)
         self.poll_spin.setSingleStep(100)
@@ -205,32 +184,21 @@ class MainWindow(QMainWindow):
         self.monitor_start_btn = QPushButton("Start Monitoring")
         self.monitor_start_btn.setObjectName("monitorStartBtn")
         self.monitor_start_btn.setToolTip("Start OpenOCD server and begin reading variables")
-        self.monitor_stop_btn = QPushButton("Stop Monitoring")
+        self.monitor_stop_btn = QPushButton("Stop")
         self.monitor_stop_btn.setObjectName("monitorStopBtn")
         self.monitor_stop_btn.setToolTip("Stop reading and shut down OpenOCD server")
         self.monitor_stop_btn.setEnabled(False)
 
-        ctrl_layout.addWidget(interval_label)
-        ctrl_layout.addWidget(self.poll_spin)
-        ctrl_layout.addStretch()
-        ctrl_layout.addWidget(self.monitor_start_btn)
-        ctrl_layout.addWidget(self.monitor_stop_btn)
-        layout.addWidget(ctrl_group)
+        ctrl_row.addWidget(filter_label)
+        ctrl_row.addWidget(self.var_filter_edit)
+        ctrl_row.addWidget(interval_label)
+        ctrl_row.addWidget(self.poll_spin)
+        ctrl_row.addStretch()
+        ctrl_row.addWidget(self.monitor_start_btn)
+        ctrl_row.addWidget(self.monitor_stop_btn)
+        monitor_layout.addLayout(ctrl_row)
 
-        # --- Variables Table ---
-        var_group = QGroupBox("Variables")
-        var_layout = QVBoxLayout(var_group)
-        var_layout.setSpacing(6)
-
-        # Filter row
-        filter_row = QHBoxLayout()
-        filter_label = QLabel("Filter:")
-        self.var_filter_edit = QLineEdit()
-        self.var_filter_edit.setPlaceholderText("Type to filter variables...")
-        filter_row.addWidget(filter_label)
-        filter_row.addWidget(self.var_filter_edit)
-        var_layout.addLayout(filter_row)
-
+        # Variable table
         self.var_table = QTableWidget()
         self.var_table.setColumnCount(6)
         self.var_table.setHorizontalHeaderLabels(
@@ -252,49 +220,65 @@ class MainWindow(QMainWindow):
         header.resizeSection(4, 90)
         header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
 
-        var_layout.addWidget(self.var_table, stretch=1)
-        layout.addWidget(var_group, stretch=1)
+        monitor_layout.addWidget(self.var_table, stretch=1)
+        splitter.addWidget(monitor_group)
 
-        # --- Monitor Log ---
-        log_group = QGroupBox("Monitor Log")
-        log_layout = QVBoxLayout(log_group)
-        self.monitor_log = QPlainTextEdit()
-        self.monitor_log.setObjectName("monitorLog")
-        self.monitor_log.setReadOnly(True)
-        self.monitor_log.setFont(QFont("Consolas", 10))
-        self.monitor_log.setMaximumBlockCount(2000)
-        self.monitor_log.setMaximumHeight(120)
-        log_layout.addWidget(self.monitor_log)
-        layout.addWidget(log_group)
+        # -- Console Output --
+        console_group = QGroupBox("Console Output")
+        console_layout = QVBoxLayout(console_group)
+        console_layout.setSpacing(4)
 
-        return tab
+        self.console = QPlainTextEdit()
+        self.console.setReadOnly(True)
+        self.console.setFont(QFont("Consolas", 11))
+        self.console.setMaximumBlockCount(5000)
+        console_layout.addWidget(self.console)
+
+        clear_row = QHBoxLayout()
+        clear_row.addStretch()
+        self.clear_btn = QPushButton("Clear")
+        self.clear_btn.setObjectName("clearBtn")
+        clear_row.addWidget(self.clear_btn)
+        console_layout.addLayout(clear_row)
+
+        splitter.addWidget(console_group)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 2)
+
+        root.addWidget(splitter, stretch=1)
+
+        # ── Status Bar ───────────────────────────────────────────────
+        self.status_bar = QStatusBar()
+        self.setStatusBar(self.status_bar)
 
     # ── Signals ──────────────────────────────────────────────────────
 
     def _connect_signals(self):
-        # Flash tab
+        # Configuration
         self.browse_btn.clicked.connect(self._browse_firmware)
+        self.map_browse_btn.clicked.connect(self._browse_map_file)
+        self.map_load_btn.clicked.connect(self._load_map_file)
+        self.firmware_edit.textChanged.connect(self._update_flash_button_states)
+        self.var_filter_edit.textChanged.connect(self._filter_variables)
+
+        # Flash
         self.connect_btn.clicked.connect(self._do_connect)
         self.flash_btn.clicked.connect(self._do_flash)
         self.erase_btn.clicked.connect(self._do_erase)
         self.reset_btn.clicked.connect(self._do_reset)
         self.abort_btn.clicked.connect(self._do_abort)
         self.clear_btn.clicked.connect(self.console.clear)
-        self.firmware_edit.textChanged.connect(self._update_flash_button_states)
 
         self.flasher.output_received.connect(self._append_output)
         self.flasher.process_finished.connect(self._on_process_finished)
         self.flasher.progress_updated.connect(self.progress_bar.setValue)
 
-        # Monitor tab
-        self.map_browse_btn.clicked.connect(self._browse_map_file)
-        self.map_load_btn.clicked.connect(self._load_map_file)
+        # Monitor
         self.monitor_start_btn.clicked.connect(self._start_monitoring)
         self.monitor_stop_btn.clicked.connect(self._stop_monitoring)
         self.poll_spin.valueChanged.connect(self.monitor.set_poll_interval)
-        self.var_filter_edit.textChanged.connect(self._filter_variables)
 
-        self.monitor.output_received.connect(self._append_monitor_log)
+        self.monitor.output_received.connect(self._append_output)
         self.monitor.connected.connect(self._on_monitor_connected)
         self.monitor.disconnected.connect(self._on_monitor_disconnected)
         self.monitor.connection_error.connect(self._on_monitor_error)
@@ -352,15 +336,13 @@ class MainWindow(QMainWindow):
             )
 
     # ══════════════════════════════════════════════════════════════════
-    # FLASH TAB
+    # FLASH
     # ══════════════════════════════════════════════════════════════════
 
     def _browse_firmware(self):
         start_dir = os.path.dirname(self.firmware_edit.text()) or os.path.expanduser("~")
         path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select Firmware File",
-            start_dir,
+            self, "Select Firmware File", start_dir,
             "Firmware Files (*.bin *.hex *.elf);;All Files (*)",
         )
         if path:
@@ -425,11 +407,6 @@ class MainWindow(QMainWindow):
         if not self.flasher.is_running():
             self.flash_btn.setEnabled(has_firmware)
 
-    def _append_output(self, text):
-        self.console.moveCursor(self.console.textCursor().End)
-        self.console.insertPlainText(text)
-        self.console.ensureCursorVisible()
-
     def _on_process_finished(self, exit_code, operation):
         if exit_code == 0:
             labels = {
@@ -448,21 +425,18 @@ class MainWindow(QMainWindow):
         self._set_flash_busy(False)
 
     def _stop_monitor_if_running(self):
-        """Stop monitor if it's active, since ST-Link can only be used by one process."""
         if self.monitor.is_connected():
             self._append_output("Stopping variable monitor before flashing...\n")
             self.monitor.stop_server()
 
     # ══════════════════════════════════════════════════════════════════
-    # MONITOR TAB
+    # VARIABLE MONITOR
     # ══════════════════════════════════════════════════════════════════
 
     def _browse_map_file(self):
         start_dir = os.path.dirname(self.map_edit.text()) or os.path.expanduser("~")
         path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select Map File",
-            start_dir,
+            self, "Select Map File", start_dir,
             "Map Files (*.map);;All Files (*)",
         )
         if path:
@@ -471,26 +445,23 @@ class MainWindow(QMainWindow):
     def _load_map_file(self):
         path = self.map_edit.text().strip()
         if not path:
-            self._append_monitor_log("Error: No map file selected.\n")
+            self._append_output("Error: No map file selected.\n")
             return
         if not os.path.isfile(path):
-            self._append_monitor_log(f"Error: File not found: {path}\n")
+            self._append_output(f"Error: File not found: {path}\n")
             return
-
         try:
             self._map_symbols = parse_map_file(path)
         except Exception as e:
-            self._append_monitor_log(f"Error parsing map file: {e}\n")
+            self._append_output(f"Error parsing map file: {e}\n")
             self._map_symbols = []
             return
-
         count = len(self._map_symbols)
-        self._append_monitor_log(f"Loaded {count} variable(s) from {os.path.basename(path)}\n")
+        self._append_output(f"Loaded {count} variable(s) from {os.path.basename(path)}\n")
         self._populate_variable_table()
         self._update_monitor_button_states()
 
     def _populate_variable_table(self):
-        """Fill the variable table with symbols from the parsed map file."""
         self.var_table.setRowCount(0)
         filter_text = self.var_filter_edit.text().strip().lower()
 
@@ -535,17 +506,15 @@ class MainWindow(QMainWindow):
                 type_combo.setCurrentIndex(idx)
             self.var_table.setCellWidget(row, 4, type_combo)
 
-            # Value (initially empty)
+            # Value
             val_item = QTableWidgetItem("---")
             val_item.setTextAlignment(Qt.AlignCenter)
             self.var_table.setItem(row, 5, val_item)
 
     def _filter_variables(self):
-        """Re-populate table based on filter text."""
         self._populate_variable_table()
 
     def _get_watched_symbols(self):
-        """Collect the list of watched symbols from the table."""
         symbols = []
         for row in range(self.var_table.rowCount()):
             watch_widget = self.var_table.cellWidget(row, 0)
@@ -554,29 +523,24 @@ class MainWindow(QMainWindow):
             cb = watch_widget.findChild(QCheckBox)
             if not cb or not cb.isChecked():
                 continue
-
             name_item = self.var_table.item(row, 1)
             sym = name_item.data(Qt.UserRole) if name_item else None
             if not sym:
                 continue
-
             type_combo = self.var_table.cellWidget(row, 4)
             type_name = type_combo.currentText() if type_combo else "uint32_t"
-
             symbols.append((sym.name, sym.address, sym.size, type_name))
         return symbols
 
     def _start_monitoring(self):
         watched = self._get_watched_symbols()
         if not watched:
-            self._append_monitor_log("No variables selected for monitoring.\n")
+            self._append_output("No variables selected for monitoring.\n")
             return
-
         self.monitor.set_poll_interval(self.poll_spin.value())
-        self._append_monitor_log(
+        self._append_output(
             f"Starting OpenOCD server for {self.target_combo.currentText()}...\n"
         )
-        # Store symbols to start polling once connected
         self._pending_watch_symbols = watched
         self.monitor.start_server(self.target_combo.currentText())
         self._update_monitor_button_states()
@@ -587,22 +551,21 @@ class MainWindow(QMainWindow):
         self._update_monitor_button_states()
 
     def _on_monitor_connected(self):
-        self._append_monitor_log("OpenOCD server ready. Starting variable polling...\n")
+        self._append_output("OpenOCD server ready. Starting variable polling...\n")
         if hasattr(self, "_pending_watch_symbols"):
             self.monitor.start_polling(self._pending_watch_symbols)
             del self._pending_watch_symbols
         self._update_monitor_button_states()
 
     def _on_monitor_disconnected(self):
-        self._append_monitor_log("Monitor disconnected.\n")
+        self._append_output("Monitor disconnected.\n")
         self._update_monitor_button_states()
 
     def _on_monitor_error(self, msg):
-        self._append_monitor_log(f"Error: {msg}\n")
+        self._append_output(f"Monitor error: {msg}\n")
         self._update_monitor_button_states()
 
     def _update_variable_values(self, values):
-        """Update the Value column in the table with live data."""
         for row in range(self.var_table.rowCount()):
             name_item = self.var_table.item(row, 1)
             if not name_item:
@@ -610,12 +573,10 @@ class MainWindow(QMainWindow):
             name = name_item.text()
             if name not in values:
                 continue
-
             result = values[name]
             val_item = self.var_table.item(row, 5)
             if val_item is None:
                 continue
-
             if result is None:
                 val_item.setText("ERR")
             else:
@@ -625,23 +586,21 @@ class MainWindow(QMainWindow):
     def _update_monitor_button_states(self):
         has_symbols = len(self._map_symbols) > 0
         is_running = self.monitor.is_server_running()
-        is_connected = self.monitor.is_connected()
-
         self.monitor_start_btn.setEnabled(has_symbols and not is_running)
         self.monitor_stop_btn.setEnabled(is_running)
         self.map_load_btn.setEnabled(not is_running)
         self.map_browse_btn.setEnabled(not is_running)
         self.map_edit.setEnabled(not is_running)
-        self.poll_spin.setEnabled(True)  # can change interval while running
 
-    def _append_monitor_log(self, text):
-        self.monitor_log.moveCursor(self.monitor_log.textCursor().End)
-        self.monitor_log.insertPlainText(text)
-        self.monitor_log.ensureCursorVisible()
+    # ── Shared helpers ───────────────────────────────────────────────
+
+    def _append_output(self, text):
+        self.console.moveCursor(self.console.textCursor().End)
+        self.console.insertPlainText(text)
+        self.console.ensureCursorVisible()
 
 
 def load_stylesheet():
-    """Load the QSS stylesheet from the style.qss file."""
     qss_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "style.qss")
     if os.path.isfile(qss_path):
         with open(qss_path, "r") as f:

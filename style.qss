@@ -250,18 +250,6 @@ QPlainTextEdit {
     selection-color: #1e1e2e;
 }
 
-QPlainTextEdit#console {
-    background-color: #181825;
-    border: 1px solid #313244;
-    border-radius: 6px;
-    padding: 8px;
-    font-family: "Cascadia Code", "Fira Code", "JetBrains Mono", "Consolas", "Monaco", monospace;
-    font-size: 12px;
-    color: #a6e3a1;
-    selection-background-color: #4fc3f7;
-    selection-color: #1e1e2e;
-}
-
 /* === Status Bar === */
 QStatusBar {
     background-color: #181825;
@@ -329,37 +317,6 @@ QScrollBar::sub-line:horizontal {
 QScrollBar::add-page:horizontal,
 QScrollBar::sub-page:horizontal {
     background: none;
-}
-
-/* === Tab Widget === */
-QTabWidget::pane {
-    background-color: #1e1e2e;
-    border: 1px solid #3b3b50;
-    border-top: none;
-    border-radius: 0 0 8px 8px;
-}
-
-QTabBar::tab {
-    background-color: #2d2d3f;
-    border: 1px solid #3b3b50;
-    border-bottom: none;
-    border-radius: 6px 6px 0 0;
-    padding: 10px 24px;
-    margin-right: 2px;
-    color: #a6adc8;
-    font-weight: 600;
-    font-size: 13px;
-}
-
-QTabBar::tab:selected {
-    background-color: #1e1e2e;
-    color: #4fc3f7;
-    border-bottom: 2px solid #4fc3f7;
-}
-
-QTabBar::tab:hover:!selected {
-    background-color: #3b3b50;
-    color: #cdd6f4;
 }
 
 /* === Table Widget === */
@@ -535,11 +492,6 @@ QPushButton#mapLoadBtn:pressed {
 QPushButton#mapLoadBtn:disabled {
     background-color: #2d4a5e;
     color: #585b70;
-}
-
-/* Monitor log (smaller) */
-QPlainTextEdit#monitorLog {
-    max-height: 120px;
 }
 
 /* Inline combo in table */

@@ -20,21 +20,29 @@ pip install -r requirements.txt
 python main.py
 ```
 
-1. Select your target MCU family from the dropdown
-2. Browse for a firmware file (`.bin`, `.hex`, or `.elf`)
-3. Click **Connect** to verify ST-Link connectivity
-4. Click **Flash** to program the firmware
-5. Use **Erase** for full chip erase or **Reset** to restart the MCU
+The tool is designed for flashing many MCUs sequentially and verifying
+correct operation. The single-page workflow layout follows these steps:
 
-### Variable Monitor
+### 1. Configure & Connect
 
-1. Switch to the **Variable Monitor** tab
-2. Browse and load a GCC ARM linker `.map` file
-3. Select which variables to watch using the checkboxes
-4. Choose the correct data type for each variable (uint8_t, int16_t, float, etc.)
-5. Set the poll interval (default: 500ms)
-6. Click **Start Monitoring** to connect and begin live reading
-7. Variable values update in real-time in the table
+- Select your target MCU family from the dropdown
+- Browse for a firmware file (`.bin`, `.hex`, or `.elf`)
+- Optionally load a GCC ARM linker `.map` file for variable monitoring
+- Click **Connect** to verify ST-Link connectivity
+
+### 2. Flash
+
+- Click **Flash** to program the firmware
+- Use **Erase** for full chip erase or **Reset** to restart the MCU
+- Progress and status are shown in real-time
+
+### 3. Monitor Variables
+
+- After loading a `.map` file, select which variables to watch using the checkboxes
+- Choose the correct data type for each variable (uint8_t, int16_t, float, etc.)
+- Set the poll interval (default: 500ms)
+- Click **Start Monitoring** to connect and begin live reading
+- Variable values update in real-time in the table
 
 The monitor uses OpenOCD's TCL RPC interface (port 6666) for efficient
 periodic memory reads without reconnecting.
