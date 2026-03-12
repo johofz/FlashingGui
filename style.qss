@@ -1,6 +1,6 @@
 /* === Global === */
 * {
-    font-family: "Segoe UI", "Ubuntu", "Noto Sans", sans-serif;
+    font-family: "Ubuntu", "Noto Sans", "Segoe UI", sans-serif;
     font-size: 13px;
     color: #cdd6f4;
     outline: none;
@@ -319,26 +319,41 @@ QScrollBar::sub-page:horizontal {
     background: none;
 }
 
-/* === Table Widget === */
-QTableWidget {
+/* === Tree Widget (Variable Monitor) === */
+QTreeWidget {
     background-color: #181825;
     alternate-background-color: #1e1e2e;
     border: 1px solid #313244;
     border-radius: 6px;
-    gridline-color: #313244;
     color: #cdd6f4;
     font-size: 12px;
     selection-background-color: #313244;
     selection-color: #cdd6f4;
 }
 
-QTableWidget::item {
+QTreeWidget::item {
     padding: 4px 8px;
     border: none;
 }
 
-QTableWidget::item:selected {
+QTreeWidget::item:selected {
     background-color: #313244;
+}
+
+QTreeWidget::branch {
+    background: transparent;
+}
+
+QTreeWidget::branch:has-children:!has-siblings:closed,
+QTreeWidget::branch:closed:has-children:has-siblings {
+    border-image: none;
+    image: none;
+}
+
+QTreeWidget::branch:open:has-children:!has-siblings,
+QTreeWidget::branch:open:has-children:has-siblings {
+    border-image: none;
+    image: none;
 }
 
 QHeaderView::section {
@@ -494,8 +509,8 @@ QPushButton#mapLoadBtn:disabled {
     color: #585b70;
 }
 
-/* Inline combo in table */
-QTableWidget QComboBox {
+/* Inline combo in tree */
+QTreeWidget QComboBox {
     min-width: 0;
     padding: 2px 6px;
     border-radius: 3px;

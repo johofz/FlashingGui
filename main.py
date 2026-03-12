@@ -5,7 +5,6 @@ import os
 import sys
 
 from PyQt5.QtCore import Qt, QSettings
-from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -24,8 +23,8 @@ from PyQt5.QtWidgets import (
     QSpinBox,
     QSplitter,
     QStatusBar,
-    QTableWidget,
-    QTableWidgetItem,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -45,7 +44,7 @@ class MainWindow(QMainWindow):
         self.settings = QSettings("STM32FlashTool", "STM32FlashTool")
         self.flasher = OpenOCDFlasher(self)
         self.monitor = OpenOCDMonitor(self)
-        self._map_symbols = []
+        self._symbols = []  # unified symbol list (MapSymbol or ElfSymbol)
 
         self._build_ui()
         self._connect_signals()
@@ -107,6 +106,22 @@ class MainWindow(QMainWindow):
         map_row.addWidget(self.map_browse_btn)
         map_row.addWidget(self.map_load_btn)
         config_layout.addLayout(map_row)
+
+        # ELF file (for struct info)
+        elf_row = QHBoxLayout()
+        elf_label = QLabel("ELF File:")
+        elf_label.setFixedWidth(100)
+        self.elf_edit = QLineEdit()
+        self.elf_edit.setPlaceholderText("Select an ELF file for struct info (optional)")
+        self.elf_browse_btn = QPushButton("Browse")
+        self.elf_browse_btn.setObjectName("browseBtn")
+        self.elf_load_btn = QPushButton("Load")
+        self.elf_load_btn.setObjectName("mapLoadBtn")
+        elf_row.addWidget(elf_label)
+        elf_row.addWidget(self.elf_edit)
+        elf_row.addWidget(self.elf_browse_btn)
+        elf_row.addWidget(self.elf_load_btn)
+        config_layout.addLayout(elf_row)
 
         root.addWidget(config_group)
 
@@ -198,18 +213,15 @@ class MainWindow(QMainWindow):
         ctrl_row.addWidget(self.monitor_stop_btn)
         monitor_layout.addLayout(ctrl_row)
 
-        # Variable table
-        self.var_table = QTableWidget()
-        self.var_table.setColumnCount(6)
-        self.var_table.setHorizontalHeaderLabels(
-            ["Watch", "Name", "Address", "Size", "Type", "Value"]
-        )
-        self.var_table.setAlternatingRowColors(True)
-        self.var_table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.var_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.var_table.verticalHeader().setVisible(False)
+        # Variable tree (replaces table for hierarchical struct display)
+        self.var_tree = QTreeWidget()
+        self.var_tree.setColumnCount(6)
+        self.var_tree.setHeaderLabels(["Watch", "Name", "Address", "Size", "Type", "Value"])
+        self.var_tree.setAlternatingRowColors(True)
+        self.var_tree.setSelectionMode(QTreeWidget.NoSelection)
+        self.var_tree.setRootIsDecorated(True)
 
-        header = self.var_table.horizontalHeader()
+        header = self.var_tree.header()
         header.setSectionResizeMode(0, QHeaderView.Fixed)
         header.resizeSection(0, 50)
         header.setSectionResizeMode(1, QHeaderView.Stretch)
@@ -217,10 +229,10 @@ class MainWindow(QMainWindow):
         header.setSectionResizeMode(3, QHeaderView.Fixed)
         header.resizeSection(3, 50)
         header.setSectionResizeMode(4, QHeaderView.Fixed)
-        header.resizeSection(4, 90)
+        header.resizeSection(4, 100)
         header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
 
-        monitor_layout.addWidget(self.var_table, stretch=1)
+        monitor_layout.addWidget(self.var_tree, stretch=1)
         splitter.addWidget(monitor_group)
 
         # -- Console Output --
@@ -230,7 +242,6 @@ class MainWindow(QMainWindow):
 
         self.console = QPlainTextEdit()
         self.console.setReadOnly(True)
-        self.console.setFont(QFont("Consolas", 11))
         self.console.setMaximumBlockCount(5000)
         console_layout.addWidget(self.console)
 
@@ -258,6 +269,8 @@ class MainWindow(QMainWindow):
         self.browse_btn.clicked.connect(self._browse_firmware)
         self.map_browse_btn.clicked.connect(self._browse_map_file)
         self.map_load_btn.clicked.connect(self._load_map_file)
+        self.elf_browse_btn.clicked.connect(self._browse_elf_file)
+        self.elf_load_btn.clicked.connect(self._load_elf_file)
         self.firmware_edit.textChanged.connect(self._update_flash_button_states)
         self.var_filter_edit.textChanged.connect(self._filter_variables)
 
@@ -293,6 +306,9 @@ class MainWindow(QMainWindow):
         map_path = self.settings.value("map_file_path", "")
         if map_path:
             self.map_edit.setText(map_path)
+        elf_path = self.settings.value("elf_file_path", "")
+        if elf_path:
+            self.elf_edit.setText(elf_path)
         target = self.settings.value("target", "")
         if target:
             idx = self.target_combo.findText(target)
@@ -307,6 +323,7 @@ class MainWindow(QMainWindow):
     def _save_settings(self):
         self.settings.setValue("firmware_path", self.firmware_edit.text())
         self.settings.setValue("map_file_path", self.map_edit.text())
+        self.settings.setValue("elf_file_path", self.elf_edit.text())
         self.settings.setValue("target", self.target_combo.currentText())
         self.settings.setValue("poll_interval", self.poll_spin.value())
         self.settings.setValue("geometry", self.saveGeometry())
@@ -442,6 +459,15 @@ class MainWindow(QMainWindow):
         if path:
             self.map_edit.setText(path)
 
+    def _browse_elf_file(self):
+        start_dir = os.path.dirname(self.elf_edit.text()) or os.path.expanduser("~")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select ELF File", start_dir,
+            "ELF Files (*.elf);;All Files (*)",
+        )
+        if path:
+            self.elf_edit.setText(path)
+
     def _load_map_file(self):
         path = self.map_edit.text().strip()
         if not path:
@@ -451,86 +477,180 @@ class MainWindow(QMainWindow):
             self._append_output(f"Error: File not found: {path}\n")
             return
         try:
-            self._map_symbols = parse_map_file(path)
+            self._symbols = parse_map_file(path)
         except Exception as e:
             self._append_output(f"Error parsing map file: {e}\n")
-            self._map_symbols = []
+            self._symbols = []
             return
-        count = len(self._map_symbols)
+        count = len(self._symbols)
         self._append_output(f"Loaded {count} variable(s) from {os.path.basename(path)}\n")
-        self._populate_variable_table()
+        self._populate_variable_tree()
         self._update_monitor_button_states()
 
-    def _populate_variable_table(self):
-        self.var_table.setRowCount(0)
+    def _load_elf_file(self):
+        path = self.elf_edit.text().strip()
+        if not path:
+            self._append_output("Error: No ELF file selected.\n")
+            return
+        if not os.path.isfile(path):
+            self._append_output(f"Error: File not found: {path}\n")
+            return
+        try:
+            from elf_parser import parse_elf_file
+            elf_symbols = parse_elf_file(path)
+        except ImportError:
+            self._append_output(
+                "Error: pyelftools not installed. Run: pip install pyelftools\n"
+            )
+            return
+        except Exception as e:
+            self._append_output(f"Error parsing ELF file: {e}\n")
+            return
+
+        # Convert ElfSymbol to MapSymbol for unified handling
+        self._symbols = []
+        for sym in elf_symbols:
+            self._symbols.append(MapSymbol(
+                name=sym.name,
+                address=sym.address,
+                size=sym.size,
+                section=sym.section,
+                type_name=sym.type_name,
+                is_struct=sym.is_struct,
+                members=sym.members,
+            ))
+
+        count = len(self._symbols)
+        struct_count = sum(1 for s in self._symbols if s.is_struct)
+        self._append_output(
+            f"Loaded {count} variable(s) from {os.path.basename(path)} "
+            f"({struct_count} struct(s))\n"
+        )
+        self._populate_variable_tree()
+        self._update_monitor_button_states()
+
+    def _populate_variable_tree(self):
+        self.var_tree.clear()
         filter_text = self.var_filter_edit.text().strip().lower()
 
-        for sym in self._map_symbols:
+        for sym in self._symbols:
             if filter_text and filter_text not in sym.name.lower():
                 continue
 
-            row = self.var_table.rowCount()
-            self.var_table.insertRow(row)
+            item = self._create_tree_item(
+                sym.name, sym.address, sym.size,
+                sym.type_name or default_type_for_size(sym.size),
+                sym.is_struct,
+            )
+            self.var_tree.addTopLevelItem(item)
 
-            # Watch checkbox
-            watch_widget = QWidget()
-            watch_layout = QHBoxLayout(watch_widget)
-            watch_layout.setContentsMargins(0, 0, 0, 0)
-            watch_layout.setAlignment(Qt.AlignCenter)
-            cb = QCheckBox()
+            # Add widgets after item is in the tree
+            self._setup_item_widgets(item, sym.is_struct,
+                                     sym.type_name or default_type_for_size(sym.size))
+
+            # Recursively add struct members
+            if sym.is_struct and sym.members:
+                self._add_struct_children(item, sym.address, sym.members)
+
+    def _create_tree_item(self, name, address, size, type_name, is_struct):
+        item = QTreeWidgetItem()
+        item.setText(1, name)
+        item.setText(2, f"0x{address:08X}")
+        item.setText(3, str(size))
+        item.setText(5, "---")
+        # Store address and size for monitoring
+        item.setData(1, Qt.UserRole, address)
+        item.setData(1, Qt.UserRole + 1, size)
+        item.setData(1, Qt.UserRole + 2, is_struct)
+        # Center-align address, size, value columns
+        item.setTextAlignment(2, Qt.AlignCenter)
+        item.setTextAlignment(3, Qt.AlignCenter)
+        item.setTextAlignment(5, Qt.AlignCenter)
+        return item
+
+    def _setup_item_widgets(self, item, is_struct, type_name):
+        """Set up checkbox and type combo widgets for a tree item."""
+        # Watch checkbox
+        watch_widget = QWidget()
+        watch_layout = QHBoxLayout(watch_widget)
+        watch_layout.setContentsMargins(0, 0, 0, 0)
+        watch_layout.setAlignment(Qt.AlignCenter)
+        cb = QCheckBox()
+        if is_struct:
+            cb.setChecked(False)
+            cb.setEnabled(False)  # can't watch a whole struct
+        else:
             cb.setChecked(True)
-            watch_layout.addWidget(cb)
-            self.var_table.setCellWidget(row, 0, watch_widget)
+        watch_layout.addWidget(cb)
+        self.var_tree.setItemWidget(item, 0, watch_widget)
 
-            # Name
-            name_item = QTableWidgetItem(sym.name)
-            name_item.setData(Qt.UserRole, sym)
-            self.var_table.setItem(row, 1, name_item)
-
-            # Address
-            addr_item = QTableWidgetItem(f"0x{sym.address:08X}")
-            addr_item.setTextAlignment(Qt.AlignCenter)
-            self.var_table.setItem(row, 2, addr_item)
-
-            # Size
-            size_item = QTableWidgetItem(str(sym.size))
-            size_item.setTextAlignment(Qt.AlignCenter)
-            self.var_table.setItem(row, 3, size_item)
-
-            # Type combo
+        # Type column
+        if is_struct:
+            item.setText(4, type_name)
+        else:
             type_combo = QComboBox()
             type_combo.addItems(list(VARIABLE_TYPES.keys()))
-            default_type = default_type_for_size(sym.size)
-            idx = type_combo.findText(default_type)
+            idx = type_combo.findText(type_name)
             if idx >= 0:
                 type_combo.setCurrentIndex(idx)
-            self.var_table.setCellWidget(row, 4, type_combo)
+            self.var_tree.setItemWidget(item, 4, type_combo)
 
-            # Value
-            val_item = QTableWidgetItem("---")
-            val_item.setTextAlignment(Qt.AlignCenter)
-            self.var_table.setItem(row, 5, val_item)
+    def _add_struct_children(self, parent_item, base_address, members):
+        for member in members:
+            abs_addr = base_address + member.offset
+            item = self._create_tree_item(
+                member.name, abs_addr, member.size,
+                member.type_name, member.is_struct,
+            )
+            parent_item.addChild(item)
+
+            # Add widgets after item is in the tree
+            self._setup_item_widgets(item, member.is_struct, member.type_name)
+
+            # Recurse for nested structs
+            if member.is_struct and member.children:
+                self._add_struct_children(item, abs_addr, member.children)
 
     def _filter_variables(self):
-        self._populate_variable_table()
+        self._populate_variable_tree()
+
+    def _get_dotted_name(self, item):
+        """Build the full dotted path for a tree item (e.g. 'ladeluxData.comData.txData')."""
+        parts = []
+        current = item
+        while current is not None:
+            parts.append(current.text(1))
+            current = current.parent()
+        parts.reverse()
+        return ".".join(parts)
 
     def _get_watched_symbols(self):
+        """Collect all checked leaf items from the tree for monitoring."""
         symbols = []
-        for row in range(self.var_table.rowCount()):
-            watch_widget = self.var_table.cellWidget(row, 0)
-            if not watch_widget:
-                continue
-            cb = watch_widget.findChild(QCheckBox)
-            if not cb or not cb.isChecked():
-                continue
-            name_item = self.var_table.item(row, 1)
-            sym = name_item.data(Qt.UserRole) if name_item else None
-            if not sym:
-                continue
-            type_combo = self.var_table.cellWidget(row, 4)
-            type_name = type_combo.currentText() if type_combo else "uint32_t"
-            symbols.append((sym.name, sym.address, sym.size, type_name))
+        self._collect_watched_recursive(self.var_tree.invisibleRootItem(), symbols)
         return symbols
+
+    def _collect_watched_recursive(self, parent, symbols):
+        for i in range(parent.childCount()):
+            item = parent.child(i)
+            is_struct = item.data(1, Qt.UserRole + 2)
+
+            if not is_struct:
+                # Leaf node: check if watched
+                watch_widget = self.var_tree.itemWidget(item, 0)
+                if watch_widget:
+                    cb = watch_widget.findChild(QCheckBox)
+                    if cb and cb.isChecked():
+                        address = item.data(1, Qt.UserRole)
+                        size = item.data(1, Qt.UserRole + 1)
+                        type_combo = self.var_tree.itemWidget(item, 4)
+                        type_name = type_combo.currentText() if type_combo else "uint32_t"
+                        dotted_name = self._get_dotted_name(item)
+                        symbols.append((dotted_name, address, size, type_name))
+
+            # Recurse into children
+            if item.childCount() > 0:
+                self._collect_watched_recursive(item, symbols)
 
     def _start_monitoring(self):
         watched = self._get_watched_symbols()
@@ -566,31 +686,39 @@ class MainWindow(QMainWindow):
         self._update_monitor_button_states()
 
     def _update_variable_values(self, values):
-        for row in range(self.var_table.rowCount()):
-            name_item = self.var_table.item(row, 1)
-            if not name_item:
-                continue
-            name = name_item.text()
-            if name not in values:
-                continue
-            result = values[name]
-            val_item = self.var_table.item(row, 5)
-            if val_item is None:
-                continue
-            if result is None:
-                val_item.setText("ERR")
-            else:
-                raw_int, type_name = result
-                val_item.setText(interpret_value(raw_int, type_name))
+        """Update displayed values in the tree from monitor results."""
+        self._update_values_recursive(self.var_tree.invisibleRootItem(), values)
+
+    def _update_values_recursive(self, parent, values):
+        for i in range(parent.childCount()):
+            item = parent.child(i)
+            is_struct = item.data(1, Qt.UserRole + 2)
+
+            if not is_struct:
+                dotted_name = self._get_dotted_name(item)
+                if dotted_name in values:
+                    result = values[dotted_name]
+                    if result is None:
+                        item.setText(5, "ERR")
+                    else:
+                        raw_int, type_name = result
+                        item.setText(5, interpret_value(raw_int, type_name))
+
+            # Recurse
+            if item.childCount() > 0:
+                self._update_values_recursive(item, values)
 
     def _update_monitor_button_states(self):
-        has_symbols = len(self._map_symbols) > 0
+        has_symbols = len(self._symbols) > 0
         is_running = self.monitor.is_server_running()
         self.monitor_start_btn.setEnabled(has_symbols and not is_running)
         self.monitor_stop_btn.setEnabled(is_running)
         self.map_load_btn.setEnabled(not is_running)
         self.map_browse_btn.setEnabled(not is_running)
         self.map_edit.setEnabled(not is_running)
+        self.elf_load_btn.setEnabled(not is_running)
+        self.elf_browse_btn.setEnabled(not is_running)
+        self.elf_edit.setEnabled(not is_running)
 
     # ── Shared helpers ───────────────────────────────────────────────
 

@@ -4,7 +4,8 @@ Extracts variable symbols (name, address, size) from .data and .bss sections.
 """
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import List
 
 
 @dataclass
@@ -13,6 +14,9 @@ class MapSymbol:
     address: int
     size: int
     section: str  # ".bss" or ".data"
+    type_name: str = ""
+    is_struct: bool = False
+    members: List = field(default_factory=list)  # List[StructMember] from elf_parser
 
 
 # Matches an output section header, e.g.:
